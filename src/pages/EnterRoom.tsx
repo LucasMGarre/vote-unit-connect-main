@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { database } from '@/lib/firebase';
-import { ref, query, orderByChild, equalTo, get, push, serverTimestamp } from 'firebase/database';
+import { ref, query, orderByChild, equalTo, get, push, serverTimestamp, set } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -91,8 +91,8 @@ const EnterRoom = () => {
       // Registrar participante
       const participantesRef = ref(database, 'participantes');
       const newParticipanteRef = push(participantesRef);
-      
-      await newParticipanteRef.set({
+
+      await set(newParticipanteRef, {
         salaId: roomId,
         unidade,
         bloco: bloco.toUpperCase(),
