@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
-import { db } from '@/lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, query, orderByChild, equalTo, onValue, push, serverTimestamp, get } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,35 +26,64 @@ const RoomVote = () => {
   useEffect(() => {
     if (!id) return;
 
-    const q = query(
-      collection(db, 'votacoes'),
-      where('salaId', '==', id),
-      where('status', '==', 'aberta')
+    console.log('Carregando votações da sala:', id);
+    const votacoesRef = ref(database, 'votacoes');
+    const votacoesQuery = query(
+      votacoesRef, 
+      orderByChild('salaId'), 
+      equalTo(id)
     );
     
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const votationsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        criadaEm: doc.data().criadaEm?.toDate(),
-      })) as Votation[];
-      
-      setVotations(votationsData);
+    const unsubscribe = onValue(votacoesQuery, async (snapshot) => {
+      if (snapshot.exists()) {
+        const votationsData: Votation[] = [];
+        snapshot.forEach((childSnapshot) => {
+          const votationData = childSnapshot.val();
+          // Apenas votações abertas
+          if (votationData.status === 'aberta') {
+            votationsData.push({
+              id: childSnapshot.key!,
+              salaId: votationData.salaId,
+              pergunta: votationData.pergunta,
+              alternativas: votationData.alternativas,
+              status: votationData.status,
+              isAnonima: votationData.isAnonima,
+              criadaEm: new Date(votationData.criadaEm),
+            });
+          }
+        });
+        
+        console.log('Votações abertas encontradas:', votationsData.length);
+        setVotations(votationsData);
 
-      // Check which votations user already voted
-      const votedSet = new Set<string>();
-      for (const votation of votationsData) {
-        const votesQuery = query(
-          collection(db, 'votos'),
-          where('votacaoId', '==', votation.id),
-          where('unidade', '==', unidade)
-        );
-        const votesSnapshot = await getDocs(votesQuery);
-        if (!votesSnapshot.empty) {
-          votedSet.add(votation.id);
+        // Verificar quais votações o usuário já votou
+        const votedSet = new Set<string>();
+        for (const votation of votationsData) {
+          const votesRef = ref(database, 'votos');
+          const votesQuery = query(
+            votesRef,
+            orderByChild('votacaoId'),
+            equalTo(votation.id)
+          );
+          
+          const votesSnapshot = await get(votesQuery);
+          if (votesSnapshot.exists()) {
+            votesSnapshot.forEach((voteSnapshot) => {
+              const voteData = voteSnapshot.val();
+              if (voteData.unidade === unidade) {
+                votedSet.add(votation.id);
+              }
+            });
+          }
         }
+        
+        console.log('Votações já votadas:', votedSet.size);
+        setVotedIds(votedSet);
+      } else {
+        console.log('Nenhuma votação encontrada');
+        setVotations([]);
+        setVotedIds(new Set());
       }
-      setVotedIds(votedSet);
       setLoading(false);
     });
 
@@ -79,7 +108,11 @@ const RoomVote = () => {
     }
 
     try {
-      await addDoc(collection(db, 'votos'), {
+      console.log('Registrando voto...');
+      const votosRef = ref(database, 'votos');
+      const newVotoRef = push(votosRef);
+      
+      await newVotoRef.set({
         votacaoId: votationId,
         salaId: id,
         unidade,
@@ -88,13 +121,15 @@ const RoomVote = () => {
         timestamp: serverTimestamp(),
       });
 
+      console.log('Voto registrado:', newVotoRef.key);
       setVotedIds(new Set(votedIds).add(votationId));
       
       toast({
         title: "Voto registrado!",
         description: "Seu voto foi computado com sucesso",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao votar:', error);
       toast({
         title: "Erro ao votar",
         description: "Tente novamente",

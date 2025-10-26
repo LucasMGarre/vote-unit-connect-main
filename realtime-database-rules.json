@@ -1,0 +1,24 @@
+{
+  "rules": {
+    "salas": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "votacoes": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "votos": {
+      ".read": true,
+      ".write": true
+    },
+    "participantes": {
+      ".read": true,
+      ".write": true
+    },
+    "test": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, get, query, orderByChild, equalTo, onValue, push, update, remove, serverTimestamp } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,30 +33,54 @@ const RoomManagement = () => {
     if (!id) return;
 
     const fetchRoom = async () => {
-      const docRef = doc(db, 'salas', id);
-      const docSnap = await getDoc(docRef);
+      console.log('Carregando sala:', id);
+      const salaRef = ref(database, `salas/${id}`);
+      const snapshot = await get(salaRef);
       
-      if (docSnap.exists()) {
+      if (snapshot.exists()) {
+        const roomData = snapshot.val();
         setRoom({
-          id: docSnap.id,
-          ...docSnap.data(),
-          criadaEm: docSnap.data().criadaEm?.toDate(),
-        } as Room);
+          id: snapshot.key!,
+          nome: roomData.nome,
+          codigo: roomData.codigo,
+          status: roomData.status,
+          criadaEm: new Date(roomData.criadaEm),
+        });
+        console.log('Sala carregada:', roomData);
       }
       setLoading(false);
     };
 
     fetchRoom();
 
-    const q = query(collection(db, 'votacoes'), where('salaId', '==', id));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const votationsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        criadaEm: doc.data().criadaEm?.toDate(),
-      })) as Votation[];
-      
-      setVotations(votationsData);
+    // Escutar mudanças nas votações
+    console.log('Escutando votações da sala:', id);
+    const votacoesRef = ref(database, 'votacoes');
+    const votacoesQuery = query(votacoesRef, orderByChild('salaId'), equalTo(id));
+    
+    const unsubscribe = onValue(votacoesQuery, (snapshot) => {
+      if (snapshot.exists()) {
+        const votationsData: Votation[] = [];
+        snapshot.forEach((childSnapshot) => {
+          const votationData = childSnapshot.val();
+          votationsData.push({
+            id: childSnapshot.key!,
+            salaId: votationData.salaId,
+            pergunta: votationData.pergunta,
+            alternativas: votationData.alternativas,
+            status: votationData.status,
+            isAnonima: votationData.isAnonima,
+            criadaEm: new Date(votationData.criadaEm),
+            encerradadaEm: votationData.encerradadaEm ? new Date(votationData.encerradadaEm) : undefined,
+          });
+        });
+        
+        console.log('Votações carregadas:', votationsData.length);
+        setVotations(votationsData);
+      } else {
+        console.log('Nenhuma votação encontrada');
+        setVotations([]);
+      }
     });
 
     return () => unsubscribe();
@@ -104,7 +128,11 @@ const RoomManagement = () => {
     }
 
     try {
-      await addDoc(collection(db, 'votacoes'), {
+      console.log('Criando votação...');
+      const votacoesRef = ref(database, 'votacoes');
+      const newVotationRef = push(votacoesRef);
+      
+      await newVotationRef.set({
         salaId: id,
         pergunta: pergunta.trim(),
         alternativas: alternativasValidas,
@@ -113,6 +141,7 @@ const RoomManagement = () => {
         criadaEm: serverTimestamp(),
       });
 
+      console.log('Votação criada:', newVotationRef.key);
       toast({
         title: "Votação criada!",
         description: "Os participantes já podem votar",
@@ -122,7 +151,8 @@ const RoomManagement = () => {
       setAlternativas(['', '']);
       setIsAnonima(true);
       setShowDialog(false);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao criar votação:', error);
       toast({
         title: "Erro ao criar votação",
         description: "Tente novamente",
@@ -135,15 +165,18 @@ const RoomManagement = () => {
     if (!window.confirm('Deseja encerrar esta votação?')) return;
 
     try {
-      await updateDoc(doc(db, 'votacoes', votationId), {
+      console.log('Encerrando votação:', votationId);
+      const votacaoRef = ref(database, `votacoes/${votationId}`);
+      await update(votacaoRef, {
         status: 'encerrada',
-        encerradadaEm: new Date(),
+        encerradadaEm: serverTimestamp(),
       });
       
       toast({
         title: "Votação encerrada",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao encerrar votação:', error);
       toast({
         title: "Erro ao encerrar",
         variant: "destructive",
@@ -155,11 +188,15 @@ const RoomManagement = () => {
     if (!window.confirm('Deseja excluir esta votação?')) return;
 
     try {
-      await deleteDoc(doc(db, 'votacoes', votationId));
+      console.log('Excluindo votação:', votationId);
+      const votacaoRef = ref(database, `votacoes/${votationId}`);
+      await remove(votacaoRef);
+      
       toast({
         title: "Votação excluída",
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao excluir votação:', error);
       toast({
         title: "Erro ao excluir",
         variant: "destructive",

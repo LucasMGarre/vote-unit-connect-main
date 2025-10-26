@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regras para salas - permitir leitura/escrita para usuários autenticados
+    match /salas/{salaId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para votações - permitir leitura/escrita para usuários autenticados
+    match /votacoes/{votacaoId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regras para votos - permitir leitura para todos, escrita para usuários autenticados
+    match /votos/{votoId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Regras para participantes - permitir leitura para todos, escrita para usuários autenticados
+    match /participantes/{participanteId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Regras para coleção de teste - permitir leitura/escrita para usuários autenticados
+    match /test/{testId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Regra geral para outros documentos
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

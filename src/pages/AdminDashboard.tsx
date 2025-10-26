@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { db } from '@/lib/firebase';
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, query, orderByChild, onValue, remove } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,16 +22,33 @@ const AdminDashboard = () => {
       return;
     }
 
-    const q = query(collection(db, 'salas'), orderBy('criadaEm', 'desc'));
+    console.log('Carregando salas do Realtime Database...');
+    const salasRef = ref(database, 'salas');
+    const salasQuery = query(salasRef, orderByChild('criadaEm'));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const roomsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        criadaEm: doc.data().criadaEm?.toDate(),
-      })) as Room[];
-      
-      setRooms(roomsData);
+    const unsubscribe = onValue(salasQuery, (snapshot) => {
+      if (snapshot.exists()) {
+        const roomsData: Room[] = [];
+        snapshot.forEach((childSnapshot) => {
+          const roomData = childSnapshot.val();
+          roomsData.push({
+            id: childSnapshot.key!,
+            nome: roomData.nome,
+            codigo: roomData.codigo,
+            status: roomData.status,
+            criadaEm: new Date(roomData.criadaEm),
+          });
+        });
+        
+        // Ordenar por data de criação (mais recente primeiro)
+        roomsData.sort((a, b) => b.criadaEm.getTime() - a.criadaEm.getTime());
+        
+        console.log('Salas carregadas:', roomsData.length);
+        setRooms(roomsData);
+      } else {
+        console.log('Nenhuma sala encontrada');
+        setRooms([]);
+      }
       setLoading(false);
     });
 
@@ -46,12 +63,16 @@ const AdminDashboard = () => {
   const handleDelete = async (roomId: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta sala?')) {
       try {
-        await deleteDoc(doc(db, 'salas', roomId));
+        console.log('Excluindo sala:', roomId);
+        const salaRef = ref(database, `salas/${roomId}`);
+        await remove(salaRef);
+        
         toast({
           title: "Sala excluída",
           description: "A sala foi removida com sucesso",
         });
-      } catch (error) {
+      } catch (error: any) {
+        console.error('Erro ao excluir sala:', error);
         toast({
           title: "Erro ao excluir",
           description: "Não foi possível excluir a sala",

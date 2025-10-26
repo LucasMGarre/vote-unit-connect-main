@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, query, orderByChild, equalTo, get, push, serverTimestamp } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,15 +23,14 @@ const EnterRoom = () => {
     setLoading(true);
 
     try {
-      const q = query(
-        collection(db, 'salas'),
-        where('codigo', '==', codigo.toUpperCase()),
-        where('status', '==', 'aberta')
-      );
+      console.log('Buscando sala com código:', codigo.toUpperCase());
+      const salasRef = ref(database, 'salas');
+      const salaQuery = query(salasRef, orderByChild('codigo'), equalTo(codigo.toUpperCase()));
 
-      const querySnapshot = await getDocs(q);
+      const snapshot = await get(salaQuery);
+      console.log('Resultado da busca:', snapshot.exists() ? 'sala encontrada' : 'nenhuma sala encontrada');
       
-      if (querySnapshot.empty) {
+      if (!snapshot.exists()) {
         toast({
           title: "Sala não encontrada",
           description: "Verifique o código e tente novamente",
@@ -40,13 +39,40 @@ const EnterRoom = () => {
         return;
       }
 
-      const roomDoc = querySnapshot.docs[0];
-      setRoomId(roomDoc.id);
+      // Verificar se a sala está aberta
+      const salaData = snapshot.val();
+      const salaId = Object.keys(salaData)[0];
+      const sala = salaData[salaId];
+      
+      if (sala.status !== 'aberta') {
+        toast({
+          title: "Sala encerrada",
+          description: "Esta sala não está mais aberta para votação",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('Sala encontrada:', salaId, sala);
+      setRoomId(salaId);
       setStep('identity');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao buscar sala:', error);
+      console.error('Código do erro:', error.code);
+      
+      let errorMessage = "Erro ao buscar sala";
+      
+      if (error.code === 'PERMISSION_DENIED') {
+        errorMessage = "Sem permissão para acessar salas.";
+      } else if (error.code === 'UNAVAILABLE') {
+        errorMessage = "Firebase indisponível. Verifique sua conexão.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Erro ao buscar sala",
-        description: "Tente novamente",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -60,9 +86,13 @@ const EnterRoom = () => {
 
     try {
       const unidade = `${bloco.toUpperCase()}-${apartamento}`;
+      console.log('Registrando participante:', { salaId: roomId, unidade });
 
       // Registrar participante
-      await addDoc(collection(db, 'participantes'), {
+      const participantesRef = ref(database, 'participantes');
+      const newParticipanteRef = push(participantesRef);
+      
+      await newParticipanteRef.set({
         salaId: roomId,
         unidade,
         bloco: bloco.toUpperCase(),
@@ -70,16 +100,30 @@ const EnterRoom = () => {
         entradaEm: serverTimestamp(),
       });
 
+      console.log('Participante registrado com sucesso');
       toast({
         title: "Entrada confirmada!",
         description: "Você entrou na sala de votação",
       });
 
       navigate(`/room/${roomId}/vote`, { state: { unidade } });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao entrar na sala:', error);
+      console.error('Código do erro:', error.code);
+      
+      let errorMessage = "Erro ao entrar na sala";
+      
+      if (error.code === 'PERMISSION_DENIED') {
+        errorMessage = "Sem permissão para entrar na sala.";
+      } else if (error.code === 'UNAVAILABLE') {
+        errorMessage = "Firebase indisponível. Verifique sua conexão.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Erro ao entrar na sala",
-        description: "Tente novamente",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

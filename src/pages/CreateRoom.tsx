@@ -1,21 +1,50 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, push, serverTimestamp, set } from 'firebase/database';
+import { testFirebaseConnection } from '@/lib/firebase-test';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, TestTube } from 'lucide-react';
 
 const CreateRoom = () => {
   const navigate = useNavigate();
   const [nome, setNome] = useState('');
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
 
   const generateRoomCode = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const result = await testFirebaseConnection();
+      if (result.success) {
+        toast({
+          title: "✅ Conexão OK",
+          description: "Firebase está funcionando corretamente",
+        });
+      } else {
+        toast({
+          title: "❌ Problema de Conexão",
+          description: result.message,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "❌ Erro no Teste",
+        description: "Não foi possível testar a conexão",
+        variant: "destructive",
+      });
+    } finally {
+      setTestingConnection(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,25 +62,50 @@ const CreateRoom = () => {
     setLoading(true);
 
     try {
+      console.log('Iniciando criação da sala...');
       const codigo = generateRoomCode();
-      const docRef = await addDoc(collection(db, 'salas'), {
+      console.log('Código gerado:', codigo);
+      
+      console.log('Conectando ao Firebase Realtime Database...');
+      const salasRef = ref(database, 'salas');
+      const newSalaRef = push(salasRef);
+
+      // Importar 'set' do firebase/database
+      await set(newSalaRef, {
         nome: nome.trim(),
         codigo,
         status: 'aberta',
         criadaEm: serverTimestamp(),
       });
 
+      console.log('Sala criada com sucesso! ID:', newSalaRef.key);
       toast({
         title: "Sala criada com sucesso!",
         description: `Código da sala: ${codigo}`,
       });
 
-      navigate(`/admin/room/${docRef.id}`);
+      navigate(`/admin/room/${newSalaRef.key}`);
     } catch (error: any) {
-      console.error('Erro ao criar sala:', error);
+      console.error('Erro detalhado ao criar sala:', error);
+      console.error('Tipo do erro:', typeof error);
+      console.error('Código do erro:', error.code);
+      console.error('Mensagem:', error.message);
+      
+      let errorMessage = "Erro desconhecido";
+      
+      if (error.code === 'PERMISSION_DENIED') {
+        errorMessage = "Sem permissão para criar salas. Verifique as regras do Firebase.";
+      } else if (error.code === 'UNAVAILABLE') {
+        errorMessage = "Firebase indisponível. Verifique sua conexão com a internet.";
+      } else if (error.code === 'UNAUTHENTICATED') {
+        errorMessage = "Usuário não autenticado. Faça login novamente.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Erro ao criar sala",
-        description: error.message || "Verifique a configuração do Firebase",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -94,9 +148,22 @@ const CreateRoom = () => {
                 </p>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Criando sala...' : 'Criar Sala'}
-              </Button>
+              <div className="space-y-3">
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? 'Criando sala...' : 'Criar Sala'}
+                </Button>
+                
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="w-full" 
+                  onClick={handleTestConnection}
+                  disabled={testingConnection}
+                >
+                  <TestTube className="h-4 w-4 mr-2" />
+                  {testingConnection ? 'Testando...' : 'Testar Conexão Firebase'}
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>

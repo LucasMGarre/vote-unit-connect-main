@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, get, query, orderByChild, equalTo, onValue } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,30 +20,56 @@ const VotationResultsNew = () => {
     if (!id) return;
 
     const fetchVotation = async () => {
-      const docRef = doc(db, 'votacoes', id);
-      const docSnap = await getDoc(docRef);
+      console.log('Carregando votação:', id);
+      const votacaoRef = ref(database, `votacoes/${id}`);
+      const snapshot = await get(votacaoRef);
       
-      if (docSnap.exists()) {
+      if (snapshot.exists()) {
+        const votationData = snapshot.val();
         setVotation({
-          id: docSnap.id,
-          ...docSnap.data(),
-          criadaEm: docSnap.data().criadaEm?.toDate(),
-        } as Votation);
+          id: snapshot.key!,
+          salaId: votationData.salaId,
+          pergunta: votationData.pergunta,
+          alternativas: votationData.alternativas,
+          status: votationData.status,
+          isAnonima: votationData.isAnonima,
+          criadaEm: new Date(votationData.criadaEm),
+          encerradadaEm: votationData.encerradadaEm ? new Date(votationData.encerradadaEm) : undefined,
+        });
+        console.log('Votação carregada:', votationData);
       }
       setLoading(false);
     };
 
     fetchVotation();
 
-    const q = query(collection(db, 'votos'), where('votacaoId', '==', id));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const votesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate(),
-      })) as Vote[];
-      
-      setVotes(votesData);
+    // Escutar mudanças nos votos
+    console.log('Escutando votos da votação:', id);
+    const votosRef = ref(database, 'votos');
+    const votosQuery = query(votosRef, orderByChild('votacaoId'), equalTo(id));
+    
+    const unsubscribe = onValue(votosQuery, (snapshot) => {
+      if (snapshot.exists()) {
+        const votesData: Vote[] = [];
+        snapshot.forEach((childSnapshot) => {
+          const voteData = childSnapshot.val();
+          votesData.push({
+            id: childSnapshot.key!,
+            votacaoId: voteData.votacaoId,
+            salaId: voteData.salaId,
+            unidade: voteData.unidade,
+            escolha: voteData.escolha,
+            timestamp: new Date(voteData.timestamp),
+            nomeVotante: voteData.nomeVotante,
+          });
+        });
+        
+        console.log('Votos carregados:', votesData.length);
+        setVotes(votesData);
+      } else {
+        console.log('Nenhum voto encontrado');
+        setVotes([]);
+      }
     });
 
     return () => unsubscribe();
