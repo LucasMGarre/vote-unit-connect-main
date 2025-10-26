@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { database } from '@/lib/firebase';
-import { ref, get, query, orderByChild, equalTo, onValue, push, update, remove, serverTimestamp } from 'firebase/database';
+import { ref, get, query, orderByChild, equalTo, onValue, push, update, remove, serverTimestamp, set } from 'firebase/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -131,8 +131,8 @@ const RoomManagement = () => {
       console.log('Criando votação...');
       const votacoesRef = ref(database, 'votacoes');
       const newVotationRef = push(votacoesRef);
-      
-      await newVotationRef.set({
+
+      await set(newVotationRef, {
         salaId: id,
         pergunta: pergunta.trim(),
         alternativas: alternativasValidas,
